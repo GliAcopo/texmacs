@@ -1430,6 +1430,8 @@
 
 (tm-define (extra-bottom-tools?) #f)
 
+(tm-define (extra-left-tools?) #f)
+
 (tm-define (has-bottom-tools? . opt-win)
   (with win (if (null? opt-win) (current-window) (car opt-win))
     (with l (window->tools win :transient-bottom :bottom)
@@ -1448,7 +1450,7 @@
   (let* ((l0 (window->tools win :transient-right :right :bottom-right))
          (l1 (window->tools win :transient-left :left :bottom-left)))
     (notify-side-tools 0 (nnull? l0))
-    (notify-side-tools 1 (nnull? l1))
+    (notify-side-tools 1 (or (nnull? l1) (extra-left-tools?)))
     (notify-bottom-tools 0 (has-bottom-tools? win))
     (keyboard-focus-on "canvas")))
 

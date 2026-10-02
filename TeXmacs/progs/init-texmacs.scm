@@ -253,6 +253,9 @@
 ;(display* "time: " (- (texmacs-time) boot-start) "\n")
 ;(display* "memory: " (texmacs-memory) " bytes\n")
 (lazy-define (text text-drd) tm-register-new-list-tag)
+(lazy-menu (text text-navigator) section-navigator-widget)
+(lazy-define (text text-navigator)
+             section-navigator-on? toggle-section-navigator)
 
 ;(display "Booting math mode\n")
 (lazy-keyboard (math math-kbd) in-math?)

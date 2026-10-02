@@ -210,10 +210,14 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (tm-widget (texmacs-left-tools win)
+  (if (section-navigator-on?)
+      (dynamic (section-navigator-widget win)))
   (for (tool (window->tools win :transient-left :left))
     (dynamic (texmacs-side-tool win tool :title)))
-  ===
-  (glue #t #t 300 1)
+  ;; the section navigator takes the remaining height itself
+  (if (not (section-navigator-on?))
+      ===
+      (glue #t #t 300 1))
   (for (tool (window->tools win :bottom-left))
     (dynamic (texmacs-side-tool win tool :title))))
 
