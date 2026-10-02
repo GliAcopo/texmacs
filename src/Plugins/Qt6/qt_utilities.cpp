@@ -14,6 +14,7 @@
 #include "qt_utilities.hpp"
 #include <time.h>
 
+#include <QPushButton>
 #include <QImage>
 #include <QPrinter>
 #include <QPainter>
@@ -739,6 +740,10 @@ private:
 void
 qt_apply_tm_style (QWidget* qwid, int style) {
   QString sheet = "* {" + parse_tm_style (style) + "}";
+  QPushButton* pb= qobject_cast<QPushButton*> (qwid);
+  if (pb && pb->isCheckable ())  // checked entries, e.g. in the side tools
+    sheet += " QPushButton:checked { background-color: palette(highlight);"
+             " color: palette(highlighted-text); }";
   qwid->setStyleSheet (sheet);
   qwid->setEnabled (! (style & WIDGET_STYLE_INERT));
 

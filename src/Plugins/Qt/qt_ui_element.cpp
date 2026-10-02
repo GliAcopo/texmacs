@@ -1004,6 +1004,10 @@ qt_ui_element_rep::as_qwidget (QWidget* parent_widget) {
           b->setText (to_qstring (open_box<T1> (get_payload (qtw)).x1));
         }
         b->setFlat (! (style & WIDGET_STYLE_BUTTON));
+        if (pre != "") {  // check marks, e.g. in the side tools
+          b->setCheckable (true);
+          b->setChecked (true);
+        }
         qwid = b;
       }
       qwid->setStyle (qtmstyle());

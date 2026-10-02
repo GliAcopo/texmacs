@@ -19,6 +19,10 @@
 #include <QMenuBar>
 #include <QLayoutItem>
 #include <QPushButton>
+#include <QScrollArea>
+#include <QScrollBar>
+#include <QPointer>
+#include <QTimer>
 #include "QTMApplication.hpp"
 
 #include "config.h"
@@ -942,6 +946,41 @@ qt_tm_widget_rep::install_main_menu () {
 }
 
 
+/*! Keep the scroll positions of the side tools when they are rebuilt, and
+ scroll a checked entry (for instance the current section of the section
+ navigator) into view. The positions are restored once the new widget has
+ been laid out. */
+static void
+restore_side_tools_scroll (QWidget* old_w, QWidget* new_w) {
+  QList<int> pos;
+  if (old_w)
+    for (QScrollArea* a : old_w->findChildren<QScrollArea*> ())
+      pos << a->verticalScrollBar()->value();
+  if (!new_w) return;
+  QList<QPointer<QScrollArea> > areas;
+  for (QScrollArea* a : new_w->findChildren<QScrollArea*> ())
+    areas << QPointer<QScrollArea> (a);
+  if (areas.isEmpty ()) return;
+  QTimer::singleShot (0, new_w, [areas, pos] () {
+    for (int i=0; i<areas.size(); i++) {
+      QScrollArea* a= areas[i];
+      if (!a || !a->widget()) continue;
+      if (a->widget()->layout()) a->widget()->layout()->activate ();
+      if (i < pos.size()) a->verticalScrollBar()->setValue (pos[i]);
+      for (QPushButton* b : a->widget()->findChildren<QPushButton*> ())
+        if (b->isCheckable () && b->isChecked ()) {
+          int y= b->mapTo (a->widget(), QPoint (0, 0)).y();
+          int h= b->height ();
+          QScrollBar* sb= a->verticalScrollBar();
+          int top= sb->value(), bot= top + a->viewport()->height();
+          if (y < top + h) sb->setValue (y - 2 * h);
+          else if (y + h > bot - h) sb->setValue (y + 3 * h - (bot - top));
+          break;
+        }
+    }
+  });
+}
+
 void
 qt_tm_widget_rep::write (slot s, blackbox index, widget w) {
   if (DEBUG_QT_WIDGETS)
@@ -1106,6 +1145,7 @@ qt_tm_widget_rep::write (slot s, blackbox index, widget w) {
       QWidget* new_qwidget = left_tools_widget->as_qwidget(mainwindow());
       if (leftTools) {
         QWidget* old_qwidget = leftTools->widget();
+        restore_side_tools_scroll (old_qwidget, new_qwidget);
         if (old_qwidget) old_qwidget->deleteLater();
         leftTools->setWidget (new_qwidget);
       }
