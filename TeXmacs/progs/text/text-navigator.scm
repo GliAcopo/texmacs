@@ -20,7 +20,8 @@
 
 (define-preferences
   ("section navigator" "off" noop)
-  ("section navigator levels" "1" noop))
+  ("section navigator levels" "1" noop)
+  ("section navigator numbers" "on" noop))
 
 (tm-define (section-navigator-on?)
   (== (get-preference "section navigator") "on"))
@@ -47,6 +48,13 @@
 
 (tm-define (set-section-navigator-levels s)
   (set-preference "section navigator levels" (if (== s "All") "all" s))
+  (update-menus))
+
+(tm-define (section-navigator-numbers?)
+  (== (get-preference "section navigator numbers") "on"))
+
+(tm-define (set-section-navigator-numbers on?)
+  (set-boolean-preference "section navigator numbers" on?)
   (update-menus))
 
 (define (section-navigator-levels-string)
@@ -103,13 +111,16 @@
         (else (path-before? (cdr p) (cdr c)))))
 
 (define (section-navigator-entries)
-  ;; list of (section depth current? in-branch?) in document order
+  ;; list of (section depth current? in-branch? number) in document order
   (let* ((l (tree-search-sections (buffer-tree)))
          (v (list->vector l))
          (n (vector-length v))
          (ranks (list->vector (map section-rank l)))
          (top (if (null? l) 0 (apply min (vector->list ranks))))
          (parents (make-vector n #f))
+         (nums (list->vector (if (section-navigator-numbers?)
+                                 (navigator-numbers l)
+                                 (map (lambda (s) #f) l))))
          (c (cursor-path))
          (cur #f))
     ;; parent of each section, and the section the cursor is in
@@ -143,9 +154,117 @@
                                       (if j (depth (vector-ref parents j) (+ d 1))
                                           d))
                                     (== i cur)
-                                    (vector-ref branch i))
+                                    (vector-ref branch i)
+                                    (vector-ref nums i))
                               r)
                         r))))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Section numbers
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; The numbers are computed with the rules of new-section in section-base.ts:
+;; a section increments its counter, resets the counters below it, and sets
+;; its prefix to <the-x>. (evaluated when used); a starred section sets an
+;; empty prefix. All sections count, also those inside environments (proofs,
+;; warnings...) which the navigator does not list, so they are searched in
+;; the whole document, except inside macros and mathematics.
+
+(define number-levels
+  '(part chapter section subsection subsubsection paragraph subparagraph))
+
+(define number-skip
+  '(assign macro xmacro hide-preamble show-preamble math equation equation*
+    eqnarray eqnarray* align align* gather gather* multline multline*
+    image graphics))
+
+(define (all-sections t)
+  (cond ((tree-atomic? t) '())
+        ((tree-in? t number-skip) '())
+        ((and (== (tree-arity t) 1) (tree-in? t (section-tag-list))) (list t))
+        ((and (== (tree-arity t) 1) (tree-in? t (section*-tag-list))) (list t))
+        (else (apply append (map all-sections (tree-children t))))))
+
+(define (exec->string x)
+  (with t (texmacs-exec x)
+    (cond ((tree-atomic? t) (tree->string t))
+          (else (texmacs->string t)))))
+
+(define (section-numbers l)
+  ;; the displayed number of each section of @l, or #f
+  (let* ((n (length number-levels))
+         (nrs (make-vector n 0))
+         (pre (make-vector n #f))
+         (short? (== (exec->string '(sectional-short-style)) "true"))
+         (shown (map (lambda (k)
+                       (!= (exec->string
+                            (list (symbol-append k '-display-numbers)))
+                           "false"))
+                     number-levels)))
+    (define (the i)
+      (let ((nr (number->string (vector-ref nrs i)))
+            (k (list-ref number-levels i)))
+        (cond ((== k 'part) (exec->string `(with "part-nr" ,nr (the-part))))
+              ((== k 'chapter) nr)
+              ((and (== k 'section) short?) nr)
+              (else (string-append (prefix (- i 1)) nr)))))
+    (define (prefix i)
+      (if (and (>= i 0) (== (vector-ref pre i) 'numbered))
+          (string-append (the i) ".")
+          ""))
+    (map (lambda (s)
+           (let* ((lab (symbol->string (tree-label s)))
+                  (star? (string-ends? lab "*"))
+                  (k (string->symbol (if star? (string-drop-right lab 1) lab)))
+                  (i (list-find-index number-levels (lambda (x) (== x k)))))
+             (and i
+                  (begin
+                    (vector-set! pre i (if star? 'starred 'numbered))
+                    (when (not star?)
+                      (vector-set! nrs i (+ (vector-ref nrs i) 1)))
+                    (when (> i 0)
+                      (for (j (.. (+ i 1) n)) (vector-set! nrs j 0)))
+                    (and (not star?) (list-ref shown i) (the i))))))
+         l)))
+
+(define (navigator-numbers-now l)
+  (let* ((all (all-sections (buffer-tree)))
+         (t (make-ahash-table)))
+    (for-each (lambda (s nr) (ahash-set! t (tree->path s) nr))
+              all (section-numbers all))
+    (map (lambda (s) (ahash-ref t (tree->path s))) l)))
+
+;; buffer -> (labels of the listed sections, their numbers, time)
+(define number-cache (make-ahash-table))
+(define number-refresh-pending? #f)
+
+(define (navigator-numbers l)
+  ;; numbers are computed again at once when the listed sections change,
+  ;; and otherwise at most every 10 seconds, when TeXmacs is idle, for the
+  ;; sections inside environments
+  (let* ((key (url->system (current-buffer)))
+         (labels (map tree-label l))
+         (old (ahash-ref number-cache key)))
+    (if (and old (== (car old) labels))
+        (begin
+          (when (and (> (- (texmacs-time) (caddr old)) 10000)
+                     (not number-refresh-pending?))
+            (set! number-refresh-pending? #t)
+            (delayed
+              (:idle 2000)
+              (set! number-refresh-pending? #f)
+              (when (== (url->system (current-buffer)) key)
+                (let* ((l2 (tree-search-sections (buffer-tree)))
+                       (nums (navigator-numbers-now l2))
+                       (cur (ahash-ref number-cache key)))
+                  (ahash-set! number-cache key
+                              (list (map tree-label l2) nums (texmacs-time)))
+                  (when (or (not cur) (!= (cadr cur) nums))
+                    (update-menus))))))
+          (cadr old))
+        (with nums (navigator-numbers-now l)
+          (ahash-set! number-cache key (list labels nums (texmacs-time)))
+          nums))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; The side tool
@@ -153,13 +272,14 @@
 
 (define (entry-label e)
   ;; the current section is marked with a triangle
-  (with (s depth current? branch?) e
+  (with (s depth current? branch? nr) e
     `(verbatim ,(string-append (make-string (* 3 depth) #\space)
                                (if current? "<#25B8> " "")
+                               (if nr (string-append nr "  ") "")
                                (section-title s)))))
 
 (define (entry-kind e)
-  (with (s depth current? branch?) e
+  (with (s depth current? branch? nr) e
     (cond (current? 'current) (branch? 'branch) (else 'other))))
 
 (define (section-navigator-go s)
@@ -191,6 +311,10 @@
     (enum (set-section-navigator-levels answer)
           '("1" "2" "3" "4" "All")
           (section-navigator-levels-string) "5em")
+    // //
+    (toggle (set-section-navigator-numbers answer)
+            (section-navigator-numbers?))
+    // (text "Numbers")
     >>)
   ===
   (with l (begin
