@@ -496,6 +496,17 @@ bracket_color (int nl) {
   }
 }
 
+// math-nesting-mode "brackets": only the brackets take the color of their
+// nesting level, from the tuple math-bracket-colors
+static tree
+bracket_only_color (edit_env env) {
+  tree cols= env->read (MATH_BRACKET_COLORS);
+  int nl= max (env->nesting_level - 1, 0);
+  if (is_tuple (cols) && N(cols) > 0 && is_atomic (cols[nl % N(cols)]))
+    return cols[nl % N(cols)];
+  return bracket_color (nl);
+}
+
 static tree
 make_large (tree_label l, tree t) {
   if (!is_atomic (t)) {
@@ -526,12 +537,21 @@ concater_rep::typeset_around (tree t, path ip, bool colored) {
     env->local_end (COLOR, old_col);
   }
   else {
+    bool only_brackets= env->get_string (MATH_NESTING_MODE) == "brackets";
+    tree bcol= only_brackets? bracket_only_color (env): tree ("");
+    tree old_col;
+#define BRACKET_COLOR_BEGIN \
+    if (only_brackets) old_col= env->local_begin (COLOR, bcol);
+#define BRACKET_COLOR_END \
+    if (only_brackets) env->local_end (COLOR, old_col);
     marker (descend (ip, 0));
     switch (L(t)) {
     case AROUND:
       if (N(t) == 3) {
         SI adjust= env->fn->double_bracket_correct;
+        BRACKET_COLOR_BEGIN
         box br1= typeset_as_concat (env, t[0], descend (ip, 0));
+        BRACKET_COLOR_END
         print (STD_ITEM, OP_OPENING_BRACKET, br1);
         if (adjust != 0 && (is_func (t[1], AROUND, 3) ||
                             is_func (t[1], VAR_AROUND, 3))) {
@@ -542,7 +562,9 @@ concater_rep::typeset_around (tree t, path ip, bool colored) {
                             0, 0, adjust, env->fn->yx));
         }
         else typeset (t[1], descend (ip, 1));
+        BRACKET_COLOR_BEGIN
         box br2= typeset_as_concat (env, t[2], descend (ip, 2));
+        BRACKET_COLOR_END
         print (STD_ITEM, OP_CLOSING_BRACKET, br2);
       }
       else typeset_error (t, ip);
@@ -556,8 +578,10 @@ concater_rep::typeset_around (tree t, path ip, bool colored) {
           //if (new_fn->type == FONT_TYPE_UNICODE)
           new_fn= rubber_font (new_fn);
         env->fn= new_fn;
+        BRACKET_COLOR_BEGIN
         typeset (make_large (LEFT, t[0]),
                  decorate_middle (descend (ip, 0)));
+        BRACKET_COLOR_END
         env->fn= old_fn;
         if (adjust != 0 && (is_func (t[1], AROUND, 3) ||
                             is_func (t[1], VAR_AROUND, 3))) {
@@ -569,16 +593,20 @@ concater_rep::typeset_around (tree t, path ip, bool colored) {
         }
         else typeset (t[1], descend (ip, 1));
         env->fn= new_fn;
+        BRACKET_COLOR_BEGIN
         typeset (make_large (RIGHT, t[2]),
                  decorate_middle (descend (ip, 2)));
+        BRACKET_COLOR_END
         env->fn= old_fn;
       }
       else typeset_error (t, ip);
       break;
     case BIG_AROUND:
       if (N(t) == 2) {
+        BRACKET_COLOR_BEGIN
         typeset (make_large (BIG, t[0]),
                  decorate_middle (descend (ip, 0)));
+        BRACKET_COLOR_END
         typeset (t[1], descend (ip, 1));
       }
       else typeset_error (t, ip);
@@ -586,6 +614,8 @@ concater_rep::typeset_around (tree t, path ip, bool colored) {
     default:
       break;
     }
+#undef BRACKET_COLOR_BEGIN
+#undef BRACKET_COLOR_END
     marker (descend (ip, 1));
   }
   env->local_end (MATH_NESTING_LEVEL, old_nl);

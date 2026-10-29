@@ -103,6 +103,10 @@ initialize_default_env () {
   env (MATH_VPOS)        = "0";         // used in fractions (-1, 0 or 1)
   env (MATH_NESTING_MODE)= "off";       // color nested brackets?
   env (MATH_NESTING_LEVEL)= "0";        // nesting level inside brackets
+  env (MATH_BRACKET_COLORS)=            // bracket colors per nesting level
+    tuple ("#2563eb", "#16a34a", "#dc2626", "#9333ea", "#d97706");
+  env (MATH_MULTIPLY_MARK)= "off";      // show invisible multiplications?
+  env (MATH_MULTIPLY_COLOR)= "#a0a0ff"; // color of their mark
   env (MATH_FRAC_LIMIT)  = "100par";    // maximal width of 2D fraction
   env (MATH_TABLE_LIMIT) = "100par";    // maximal width of 2D math table
   env (MATH_FLATTEN_COLOR)  = "#448";   // bracket color when 2D width excess

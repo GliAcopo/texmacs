@@ -154,10 +154,18 @@ concater_rep::typeset_math_string (tree t, path ip, int pos, int end) {
     else { // strings
       penalty_max (tp->pen_before);
       if (spc_ok) { PRINT_SPACE (tp->spc_before); }
-      if (pos > start && s[start] == '*' && env->info_level >= INFO_SHORT) {
+      // math-multiply-mark "screen" shows the invisible multiplications
+      // as with informative flags, "on" also prints them
+      string mark= (pos > start && s[start] == '*')?
+                   env->get_string (MATH_MULTIPLY_MARK): string ("off");
+      if (pos > start && s[start] == '*' &&
+          (env->info_level >= INFO_SHORT || mark == "screen" || mark == "on")) {
         color c = rgb_color (160, 160, 255);
+        if (mark == "screen" || mark == "on")
+          c= named_color (env->get_string (MATH_MULTIPLY_COLOR), env->alpha);
         box   tb= text_box (decorate (ip), 0, "<cdot>", env->fn, c);
-        box   sb= specific_box (decorate (ip), tb, "screen", env->fn);
+        box   sb= (mark == "on")? tb:
+                  specific_box (decorate (ip), tb, "screen", env->fn);
         box   mb= move_box (decorate (ip), sb, -tb->w()>>1, 0);
         box   rb= resize_box (decorate (ip), mb, 0, tb->y1, 0, tb->y2);
         a << line_item (STD_ITEM, OP_SKIP, rb, HYPH_INVALID);
